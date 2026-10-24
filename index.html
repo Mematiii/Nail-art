@@ -26,7 +26,9 @@ button,input{font:inherit;color:inherit}
 
 #app{height:100vh;height:100dvh;display:flex;flex-direction:column}
 #stage{position:relative;flex:1 1 auto;min-height:0;background:#000;overflow:hidden}
-#view{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+#view,#gl{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#view{background:#000}
+#gl{pointer-events:none}
 #cam{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
 
 .glass{background:rgba(17,16,18,.62);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
@@ -51,7 +53,8 @@ button,input{font:inherit;color:inherit}
 #msg{min-height:1.4em;max-width:36ch;font-size:13px;color:var(--danger)}
 
 #panel{flex:none;max-height:44vh;max-height:44dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--panel);border-top:1px solid var(--line);
-  padding:12px max(16px,env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));display:grid;gap:14px}
+  padding:12px max(16px,env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));display:grid;grid-template-columns:minmax(0,1fr);gap:14px;overflow-x:hidden}
+#panel>*{min-width:0}
 .sec h2{margin:0 0 8px;font:600 11px/1 var(--font-body);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 .row{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
 .row::-webkit-scrollbar{display:none}
@@ -68,6 +71,10 @@ details.more summary{cursor:pointer;font:600 11px/1 var(--font-body);letter-spac
 .sliders{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin-top:12px}
 .slider{display:grid;gap:4px;font-size:12px;color:var(--muted);min-width:0}
 .slider input{width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:14px;font-size:12px;color:var(--muted)}
+.seg .lbl{flex:0 0 100%}
+.seg .pill{padding:7px 14px;font-size:12px}
+.hint{margin:6px 0 0;font-size:11.5px;color:var(--muted);max-width:44ch}
 
 #shot{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px}
 #shot[hidden]{display:none}
@@ -82,6 +89,7 @@ details.more summary{cursor:pointer;font:600 11px/1 var(--font-body);letter-spac
   <div id="stage">
     <video id="cam" playsinline muted autoplay></video>
     <canvas id="view" aria-label="Canlı kamera görüntüsü, tırnak denemesi"></canvas>
+    <canvas id="gl" aria-hidden="true"></canvas>
     <div id="status" class="glass" role="status">Kamera kapalı</div>
     <div id="tools">
       <button id="flip" class="round glass" aria-label="Kamerayı çevir">
@@ -94,7 +102,7 @@ details.more summary{cursor:pointer;font:600 11px/1 var(--font-body);letter-spac
     <div id="intro">
       <canvas id="motif" width="340" height="96"></canvas>
       <h1>Tırnak Provası</h1>
-      <p>Elini kameraya göster. Seçtiğin şekil ve tasarım parmaklarının üzerinde canlı görünür.</p>
+      <p>Elini kameraya göster. Seçtiğin şekil ve tasarım parmaklarının üzerinde, 3 boyutlu ve canlı görünür.</p>
       <ul>
         <li>El sırtı kameraya dönük olsun</li>
         <li>Işık yeterli, parmaklar açık</li>
@@ -115,9 +123,16 @@ details.more summary{cursor:pointer;font:600 11px/1 var(--font-body);letter-spac
       <div class="sliders">
         <label class="slider">Uzunluk<input id="len" type="range" min="0.6" max="1.6" step="0.01" value="1"></label>
         <label class="slider">Genişlik<input id="wid" type="range" min="0.7" max="1.4" step="0.01" value="1"></label>
-        <label class="slider">Konum<input id="pos" type="range" min="-0.15" max="0.15" step="0.005" value="0"></label>
-        <label class="slider">Parlaklık<input id="gloss" type="range" min="0" max="1" step="0.01" value="0.6"></label>
+        <label class="slider">Konum<input id="pos" type="range" min="-0.2" max="0.2" step="0.005" value="0"></label>
+        <label class="slider">Parlaklık (sola: mat)<input id="gloss" type="range" min="0" max="1" step="0.01" value="0.6"></label>
       </div>
+      <div class="seg" id="vis" role="group" aria-label="El sırtı algılama">
+        <span class="lbl">El sırtı algılama</span>
+        <button class="pill" type="button" data-vis="off">Kapalı</button>
+        <button class="pill" type="button" data-vis="on">Açık</button>
+        <button class="pill" type="button" data-vis="inv">Ters</button>
+      </div>
+      <p class="hint">Açık: tırnaklar yalnızca el sırtı kameraya dönükken görünür. Tırnaklar yanlış tarafta çıkıyorsa Ters'i seç.</p>
     </details>
   </section>
 </div>
@@ -137,6 +152,7 @@ const VISION_BASES = [
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14',
   'https://unpkg.com/@mediapipe/tasks-vision@0.10.14'
 ];
+const Z_DAMP = 0.6;   // MediaPipe depth is noisy; only part of it is trusted for tilt
 
 // MediaPipe hand landmark ids: tip and the joint just below it.
 // wf: nail width relative to the index finger, in hand-size terms. ws: same, in fingertip-length terms.
@@ -159,14 +175,18 @@ const SHAPES = [
   { key: 'stiletto',   label: 'Stiletto',         ext: 0.34 }
 ];
 
+// mode: how the 3D shader treats the design (0 texture, 1 cat eye, 2 chrome, 3 holographic)
 const DESIGNS = [
-  { key: 'solid',   label: 'Düz',        two: false },
-  { key: 'french',  label: 'French',     two: true  },
-  { key: 'ombre',   label: 'Ombre',      two: true  },
-  { key: 'stripes', label: 'Çizgili',    two: true  },
-  { key: 'marble',  label: 'Mermer',     two: true  },
-  { key: 'glitter', label: 'Pırıltı',    two: true  },
-  { key: 'cateye',  label: 'Kedi gözü',  two: false }
+  { key: 'solid',   label: 'Düz',         two: false, mode: 0 },
+  { key: 'french',  label: 'French',      two: true,  mode: 0 },
+  { key: 'ombre',   label: 'Ombre',       two: true,  mode: 0 },
+  { key: 'stripes', label: 'Çizgili',     two: true,  mode: 0 },
+  { key: 'marble',  label: 'Mermer',      two: true,  mode: 0 },
+  { key: 'glitter', label: 'Pırıltı',     two: true,  mode: 0 },
+  { key: 'gems',    label: 'Taşlı',       two: true,  mode: 0 },
+  { key: 'cateye',  label: 'Kedi gözü',   two: false, mode: 1 },
+  { key: 'chrome',  label: 'Krom',        two: false, mode: 2 },
+  { key: 'holo',    label: 'Holografik',  two: false, mode: 3 }
 ];
 
 const SWATCHES = ['#D9A78F','#E8A0B4','#B3122B','#5E1224','#FF6F61','#B79CED','#5B8DEF','#1F7A5C','#121212','#F6F3EE','#D4AF37'];
@@ -174,9 +194,18 @@ const SWATCHES = ['#D9A78F','#E8A0B4','#B3122B','#5E1224','#FF6F61','#B79CED','#
 const state = {
   shape: 'almond', design: 'solid',
   c1: '#D9A78F', c2: '#F6F3EE',
-  len: 1, wid: 1, pos: 0, gloss: 0.6,
-  image: null
+  len: 1, wid: 1, pos: 0, gloss: 0.6, vis: 'off',
+  image: null, imageId: 0
 };
+
+/* ---------- Small vector helpers (3D) ---------- */
+const v3 = (x,y,z) => ({ x, y, z });
+const sub = (a,b) => v3(a.x-b.x, a.y-b.y, a.z-b.z);
+const mulS = (a,k) => v3(a.x*k, a.y*k, a.z*k);
+const dot3 = (a,b) => a.x*b.x + a.y*b.y + a.z*b.z;
+const cross3 = (a,b) => v3(a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x);
+const len3 = a => Math.hypot(a.x, a.y, a.z);
+const norm3 = a => { const l = len3(a) || 1; return v3(a.x/l, a.y/l, a.z/l); };
 
 /* ---------- Colour helpers ---------- */
 function hexToRgb(h){
@@ -193,7 +222,7 @@ function alpha(h, a){ const [r,g,b] = hexToRgb(h); return `rgba(${r},${g},${b},$
 function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
 /* ---------- Nail outline (local space: base centre at 0,0; free edge towards -y) ---------- */
-function nailPath(shape, W, L){
+function nailSegs(shape, W, L){
   const hw = W / 2, pts = [[0,0]], segs = [];
   const cubic = (c1x,c1y,c2x,c2y,x,y) => { segs.push([c1x,c1y,c2x,c2y,x,y]); pts.push([x,y]); };
   const line = (x,y) => {
@@ -215,6 +244,10 @@ function nailPath(shape, W, L){
     case 'stiletto':   line(hw, -L*.34); cubic(hw*.96, -L*.6, hw*.3, -L*.88, 0, -L); break;
     default:           line(hw, -L*.58); cubic(hw, -L*.84, hw*.52, -L, 0, -L);
   }
+  return { segs, pts };
+}
+function nailPath(shape, W, L){
+  const { segs, pts } = nailSegs(shape, W, L);
   const p = new Path2D();
   p.moveTo(0,0);
   for (const s of segs) p.bezierCurveTo(s[0],s[1],s[2],s[3],s[4],s[5]);
@@ -226,7 +259,16 @@ function nailPath(shape, W, L){
   return p;
 }
 
-/* ---------- Painting one nail ---------- */
+/* ---------- Painting a design (shared by the 3D texture and the 2D fallback) ---------- */
+function drawGem(ctx, x, y, r, col){
+  const g = ctx.createRadialGradient(x - r*.3, y - r*.35, r*.1, x, y, r);
+  g.addColorStop(0, '#ffffff'); g.addColorStop(.35, mix(col, .5)); g.addColorStop(1, mix(col, -.55));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = Math.max(1, r*.12);
+  ctx.beginPath(); ctx.moveTo(x - r*.72, y); ctx.lineTo(x, y - r*.72); ctx.lineTo(x + r*.72, y); ctx.lineTo(x, y + r*.72); ctx.closePath(); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.beginPath(); ctx.arc(x - r*.32, y - r*.38, r*.17, 0, 6.2832); ctx.fill();
+}
+
 function paintDesign(ctx, W, L, st, t, seed){
   const hw = W/2, c1 = st.c1, c2 = st.c2;
   ctx.fillStyle = c1;
@@ -281,10 +323,28 @@ function paintDesign(ctx, W, L, st, t, seed){
       }
       break;
     }
+    case 'gems':
+      drawGem(ctx, 0, -L*.2, W*.13, c2);
+      drawGem(ctx, -hw*.52, -L*.37, W*.07, c2);
+      drawGem(ctx, hw*.52, -L*.37, W*.07, c2);
+      drawGem(ctx, 0, -L*.5, W*.045, c2);
+      break;
     case 'cateye': {
       const g = ctx.createLinearGradient(-hw, 0, hw, 0);
       g.addColorStop(0, mix(c1,-.35)); g.addColorStop(.36, mix(c1,-.1));
       g.addColorStop(.5, mix(c1,.6)); g.addColorStop(.64, mix(c1,-.1)); g.addColorStop(1, mix(c1,-.4));
+      ctx.fillStyle = g; ctx.fillRect(-hw-2, -L-2, W+4, L+4);
+      break;
+    }
+    case 'chrome': {
+      const g = ctx.createLinearGradient(-hw, -L, hw, 0);
+      g.addColorStop(0, mix(c1,.7)); g.addColorStop(.35, mix(c1,-.45)); g.addColorStop(.55, mix(c1,.55)); g.addColorStop(1, mix(c1,-.5));
+      ctx.fillStyle = g; ctx.fillRect(-hw-2, -L-2, W+4, L+4);
+      break;
+    }
+    case 'holo': {
+      const g = ctx.createLinearGradient(-hw, 0, hw, -L);
+      ['#ff9ad5','#ffd59a','#c8ff9a','#9affea','#9ab8ff','#d59aff'].forEach((c,i,a) => g.addColorStop(i/(a.length-1), c));
       ctx.fillStyle = g; ctx.fillRect(-hw-2, -L-2, W+4, L+4);
       break;
     }
@@ -297,6 +357,7 @@ function paintDesign(ctx, W, L, st, t, seed){
   }
 }
 
+/* ---------- 2D fallback painter (used when WebGL is unavailable) ---------- */
 function paintGloss(ctx, W, L, amount){
   const hw = W/2;
   ctx.save(); ctx.globalAlpha = amount;
@@ -309,57 +370,64 @@ function paintGloss(ctx, W, L, amount){
   ctx.beginPath(); ctx.ellipse(-hw*.42, -L*.82, hw*.07, L*.05, .3, 0, 6.2832); ctx.fill();
   ctx.restore();
 }
-
 function paintNail(ctx, W, L, st, t, seed){
   const hw = W/2, path = nailPath(st.shape, W, L);
-  ctx.save();                                   // soft contact shadow
+  ctx.save();
   ctx.shadowColor = 'rgba(0,0,0,.28)'; ctx.shadowBlur = W*.14; ctx.shadowOffsetY = W*.03;
   ctx.fillStyle = st.c1; ctx.fill(path);
   ctx.restore();
-
   ctx.save();
   ctx.clip(path);
   paintDesign(ctx, W, L, st, t, seed);
-  const side = ctx.createLinearGradient(-hw, 0, hw, 0);   // roundness across the nail
+  const side = ctx.createLinearGradient(-hw, 0, hw, 0);
   side.addColorStop(0, 'rgba(0,0,0,.20)'); side.addColorStop(.3, 'rgba(0,0,0,0)');
   side.addColorStop(.72, 'rgba(255,255,255,.06)'); side.addColorStop(1, 'rgba(0,0,0,.18)');
   ctx.fillStyle = side; ctx.fillRect(-hw-2, -L-2, W+4, L+4);
-  const cut = ctx.createLinearGradient(0, 0, 0, -L*.3);   // shade near the cuticle
+  const cut = ctx.createLinearGradient(0, 0, 0, -L*.3);
   cut.addColorStop(0, 'rgba(0,0,0,.16)'); cut.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = cut; ctx.fillRect(-hw-2, -L*.3, W+4, L*.3+2);
   if (st.gloss > 0) paintGloss(ctx, W, L, st.gloss);
   ctx.restore();
-
   ctx.lineWidth = Math.max(1, W*.03); ctx.strokeStyle = 'rgba(0,0,0,.3)'; ctx.stroke(path);
 }
 
-/* ---------- Landmarks -> nail placement ---------- */
+/* ---------- Landmarks -> hands with 3D pose ---------- */
 function toHands(result, w, h){
   const out = [];
-  for (const lm of (result.landmarks || [])){
-    const P = i => ({ x: lm[i].x*w, y: lm[i].y*h });
-    const d = (a,b) => Math.hypot(a.x-b.x, a.y-b.y);
-    const handW = d(P(5), P(17)), handLen = d(P(0), P(9));
+  (result.landmarks || []).forEach((lm, hi) => {
+    const P = i => v3(lm[i].x*w, lm[i].y*h, (lm[i].z || 0)*w*Z_DAMP);
+    const p0 = P(0), p5 = P(5), p9 = P(9), p17 = P(17);
+    const handW = len3(sub(p5, p17)), handLen = len3(sub(p0, p9));
+    // Back-of-hand direction, always oriented towards the camera (camera looks along +z, nearer = smaller z).
+    let n = cross3(sub(p5, p0), sub(p17, p0));
+    if (n.z > 0) n = mulS(n, -1);
+    n = len3(n) < 1e-6 ? v3(0, 0, -1) : norm3(n);
+    // Chirality from the image plane. A raw (un-mirrored) frame swaps MediaPipe's Left/Right label.
+    const s2 = Math.sign((p5.x-p0.x)*(p17.y-p0.y) - (p5.y-p0.y)*(p17.x-p0.x)) || 1;
+    const cat = result.handedness && result.handedness[hi] && result.handedness[hi][0];
+    const c = cat && cat.categoryName === 'Left' ? 1 : -1;
     out.push({
-      wrist: P(0),
-      ref: Math.max(handW, handLen*.6),   // stays steady when fingers curl
+      wrist: p0, ref: Math.max(handW, handLen*.6), normal: n, facing: s2*c,
       fingers: FINGERS.map(f => ({ id: f.id, wf: f.wf, ws: f.ws, b: f.b, l: f.l, tip: P(f.tip), dip: P(f.dip) }))
     });
-  }
+  });
   return out;
 }
+const handVisible = (hand, vis) => vis === 'on' ? hand.facing > 0 : vis === 'inv' ? hand.facing < 0 : true;
 
+const FIT_SHIFT = 0.14, FIT_GROW = 0.04;   // placement calibration from a real device screenshot
+/* ---------- 2D fallback: place painted nails ---------- */
 function drawNails(ctx, hands, st, t){
+  const shape = SHAPES.find(s => s.key === st.shape) || SHAPES[0];
   hands.forEach((hand, hi) => {
+    if (!handVisible(hand, st.vis)) return;
     hand.fingers.forEach((f, fi) => {
       const dx = f.tip.x - f.dip.x, dy = f.tip.y - f.dip.y, seg = Math.hypot(dx, dy);
       if (seg < 4) return;
       const ux = dx/seg, uy = dy/seg;
-      const shape = SHAPES.find(s => s.key === st.shape) || SHAPES[0];
-      const bx = f.dip.x + ux*seg*(f.b + st.pos), by = f.dip.y + uy*seg*(f.b + st.pos);
-      // width blends hand size (steady when a finger curls) with fingertip length (follows each hand's proportions)
-      const W = 0.5*(0.172*hand.ref*f.wf + 0.54*seg*f.ws)*st.wid;
-      const L = Math.max(seg*(f.l + shape.ext)*st.len, W*.55);
+      const bx = f.dip.x + ux*seg*(f.b + FIT_SHIFT + st.pos), by = f.dip.y + uy*seg*(f.b + FIT_SHIFT + st.pos);
+      const W = 0.5*(0.185*hand.ref*f.wf + 0.58*seg*f.ws)*st.wid;
+      const L = Math.max(seg*(f.l + shape.ext + FIT_GROW)*st.len, W*.55);
       ctx.save();
       ctx.translate(bx, by);
       ctx.rotate(Math.atan2(dy, dx) + Math.PI/2);
@@ -369,12 +437,365 @@ function drawNails(ctx, hands, st, t){
   });
 }
 
+/* ---------- Finger frame in 3D: x across the nail, y towards the tip, z out of the nail ---------- */
+function nailFrame(hand, f){
+  const d = sub(f.tip, f.dip), seg = len3(d);
+  if (seg < 4) return null;
+  const F = mulS(d, 1/seg);
+  let N = sub(hand.normal, mulS(F, dot3(hand.normal, F)));
+  if (len3(N) < 0.2){ const z = v3(0, 0, -1); N = sub(z, mulS(F, dot3(z, F))); }
+  N = norm3(N);
+  return { F, N, X: cross3(F, N), seg };
+}
+function nailSize(hand, f, fr, st){
+  const shape = SHAPES.find(s => s.key === st.shape) || SHAPES[0];
+  const W = 0.5*(0.185*hand.ref*f.wf + 0.58*fr.seg*f.ws)*st.wid;
+  const L = Math.max(fr.seg*(f.l + shape.ext + FIT_GROW)*st.len, W*.55);
+  return { W, L };
+}
+
+/* ---------- 3D nail mesh ---------- */
+const LR = 1.5;              // mesh length / width
+const ARCH = 0.24, CURL = 0.16, THICK = 0.06, ROUND = 0.55;   // in units of nail width; ROUND < 1 gives a plump, rounded gel profile
+
+function buildGeometry(shape){
+  const { segs, pts } = nailSegs(shape, 1, LR);
+  const poly = [];           // right half of the outline, y>=0 towards the tip
+  segs.forEach((s, i) => {
+    const p0 = pts[i];
+    for (let k = i ? 1 : 0; k <= 14; k++){
+      const t = k/14, u = 1 - t;
+      poly.push([
+        u*u*u*p0[0] + 3*u*u*t*s[0] + 3*u*t*t*s[2] + t*t*t*s[4],
+        -(u*u*u*p0[1] + 3*u*u*t*s[1] + 3*u*t*t*s[3] + t*t*t*s[5])
+      ]);
+    }
+  });
+  const hwAt = yq => {
+    let best = 0.0005;
+    for (let i = 0; i < poly.length - 1; i++){
+      const [x0,y0] = poly[i], [x1,y1] = poly[i+1];
+      const lo = Math.min(y0,y1), hi = Math.max(y0,y1);
+      if (yq < lo - 1e-9 || yq > hi + 1e-9) continue;
+      if (hi - lo < 1e-9) best = Math.max(best, x0, x1);
+      else best = Math.max(best, x0 + (x1-x0)*(yq-y0)/(y1-y0));
+    }
+    return best;
+  };
+
+  const M = 46, N = 28, STRIDE = 11;
+  const verts = [];
+  const push = (px,py,pz, nx,ny,nz, u,v, m0,m1,m2) => verts.push(px,py,pz, nx,ny,nz, u,v, m0,m1,m2);
+  const grid = [];           // [j][i] -> {x,y,z,u}
+  for (let j = 0; j <= M; j++){
+    const y = LR*(0.5 - 0.5*Math.cos(Math.PI*j/M)), t = y/LR;
+    const hw = hwAt(y), hwS = Math.max(hw, 0.03);
+    const e = 0.012; const dhw = (hwAt(Math.min(y+e, LR)) - hwAt(Math.max(y-e, 0))) / (Math.min(y+e, LR) - Math.max(y-e, 0));
+    const A = 0.7 + 0.3*Math.sin(Math.PI*t), dA = 0.3*Math.PI*Math.cos(Math.PI*t)/LR;
+    grid[j] = [];
+    for (let i = 0; i <= N; i++){
+      const u = -Math.cos(Math.PI*i/N), x = u*hw;      // columns bunch up near the rim, where the surface bends fastest
+      const q = Math.max(1 - u*u, 0.004), qp = Math.pow(q, ROUND);
+      const z = ARCH*qp*A - CURL*t*t;
+      const dzdu = ARCH*A*ROUND*Math.pow(q, ROUND - 1)*(-2*u);
+      const dzdx = dzdu/hwS;
+      const dudy = -u*dhw/hwS;
+      const dzdy = dzdu*dudy + ARCH*qp*dA - 2*CURL*t/LR;
+      const nl = norm3(v3(-dzdx, -dzdy, 1));
+      grid[j][i] = { x, y, z, u, nx: nl.x, ny: nl.y, nz: nl.z, t };
+      push(x, y, z, nl.x, nl.y, nl.z, x + 0.5, 1 - y/LR, Math.abs(u), t, 0);
+    }
+  }
+  const idx = [];
+  const at = (j,i) => j*(N+1) + i;
+  for (let j = 0; j < M; j++) for (let i = 0; i < N; i++){
+    idx.push(at(j,i), at(j+1,i), at(j,i+1), at(j,i+1), at(j+1,i), at(j+1,i+1));
+  }
+  // side wall around the rim
+  const loop = [];
+  for (let j = 0; j <= M; j++) loop.push(grid[j][N]);
+  for (let i = N-1; i >= 0; i--) loop.push(grid[M][i]);
+  for (let j = M-1; j >= 0; j--) loop.push(grid[j][0]);
+  const base = verts.length / STRIDE;
+  loop.forEach((p, k) => {
+    const a = loop[(k + loop.length - 1) % loop.length], b = loop[(k + 1) % loop.length];
+    let tx = b.x - a.x, ty = b.y - a.y, nx = ty, ny = -tx;
+    if (Math.hypot(nx, ny) < 1e-6){ nx = p.x; ny = p.y - LR/2; }
+    if (nx*p.x + ny*(p.y - LR/2) < 0){ nx = -nx; ny = -ny; }
+    const l = Math.hypot(nx, ny) || 1; nx /= l; ny /= l;
+    push(p.x, p.y, p.z, nx, ny, 0, p.x + 0.5, 1 - p.y/LR, 1, p.t, 1);
+    push(p.x, p.y, p.z - THICK, nx, ny, 0, p.x + 0.5, 1 - p.y/LR, 1, p.t, 1);
+  });
+  for (let k = 0; k < loop.length; k++){
+    const k2 = (k + 1) % loop.length;
+    const t0 = base + k*2, b0 = t0 + 1, t1 = base + k2*2, b1 = t1 + 1;
+    idx.push(t0, b0, t1, t1, b0, b1);
+  }
+  return { vertices: new Float32Array(verts), indices: new Uint16Array(idx), stride: STRIDE };
+}
+
+/* ---------- WebGL renderer ---------- */
+const VERT = `
+attribute vec3 aPos; attribute vec3 aNor; attribute vec2 aUV; attribute vec3 aMeta;
+uniform vec3 uBase; uniform mat3 uAxes; uniform vec3 uScale; uniform vec2 uRes;
+varying vec3 vN; varying vec2 vUV; varying vec3 vMeta; varying vec2 vScene;
+void main(){
+  vec3 w = uBase + uAxes*(aPos*uScale);
+  gl_Position = vec4(w.x/uRes.x*2.0-1.0, 1.0-w.y/uRes.y*2.0, w.z/uRes.x, 1.0);
+  vN = normalize(uAxes*(aNor/uScale));
+  vUV = aUV; vMeta = aMeta; vScene = w.xy/uRes;
+}`;
+const FRAG = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec3 vN; varying vec2 vUV; varying vec3 vMeta; varying vec2 vScene;
+uniform sampler2D uTex; uniform sampler2D uScene;
+uniform float uGloss; uniform float uMode; uniform float uExpo; uniform float uTime;
+uniform vec3 uLight; uniform vec3 uTint;
+
+float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233)))*43758.5453); }
+// the camera frame, softened, used for colour cast and reflections
+vec3 sceneAt(vec2 uv){
+  vec2 o = vec2(0.014, 0.022);
+  return (texture2D(uScene, uv + o).rgb + texture2D(uScene, uv - o).rgb
+        + texture2D(uScene, uv + vec2(o.x, -o.y)).rgb + texture2D(uScene, uv + vec2(-o.x, o.y)).rgb)*0.25;
+}
+float box(vec2 p, vec2 c, vec2 hs, float soft){
+  vec2 d = abs(p - c) - hs;
+  return 1.0 - smoothstep(0.0, soft, max(d.x, d.y));
+}
+// a studio: bright window upper left, thin strip light on the right, cool sky above, dark floor
+vec3 env(vec3 R){
+  float up = clamp(-R.y*0.5 + 0.5, 0.0, 1.0);
+  vec3 sky = mix(vec3(0.20,0.19,0.20), vec3(0.80,0.83,0.90), up);
+  float f = step(R.z, 0.0);
+  float win1 = box(R.xy, vec2(-0.42,-0.52), vec2(0.16,0.20), 0.14)*f;
+  float win2 = box(R.xy, vec2(0.62,-0.15), vec2(0.07,0.30), 0.10)*f;
+  return sky + vec3(1.0,0.99,0.96)*win1*2.4 + vec3(0.85,0.90,1.0)*win2*0.9;
+}
+void main(){
+  vec3 N = normalize(vN);
+  vec3 V = vec3(0.0, 0.0, -1.0);
+  vec3 base = texture2D(uTex, vUV).rgb;
+  float edge = vMeta.x, along = vMeta.y, wall = vMeta.z;
+  float ndv = clamp(dot(N, V), 0.0, 1.0);
+  vec3 L = normalize(uLight);
+  float wrap = clamp((dot(N, L) + 0.35)/1.35, 0.0, 1.0);
+  vec3 skin = sceneAt(vScene);
+
+  // body colour: lit by the estimated light, with warm depth toward thin edges and the cuticle
+  vec3 col = base*(0.52 + 0.58*wrap)*uTint*uExpo;
+  col += base*vec3(0.10,0.025,0.0)*pow(1.0 - ndv, 2.0)*0.6;
+  col *= 1.0 - 0.30*pow(edge, 2.5) - 0.20*(1.0 - smoothstep(0.0, 0.14, along));
+
+  // clear coat
+  vec3 R = reflect(-V, N);
+  float fres = 0.04 + 0.96*pow(1.0 - ndv, 5.0);
+  vec3 refl = mix(env(R), sceneAt(vScene + R.xy*0.22)*1.15, 0.35);
+  float g = uGloss;
+  vec3 H = normalize(L + V);
+  float ndh = max(dot(N, H), 0.0);
+  float spec = pow(ndh, mix(10.0, 260.0, g))*(0.06 + 1.2*g) + pow(ndh, 40.0)*0.12*g;
+  float clear = (0.10 + 0.90*fres)*g;
+
+  if (uMode > 0.5 && uMode < 1.5){                      // cat eye: a magnetic band that slides with the view
+    float q = (dot(N, normalize(vec3(-0.55,-0.1,-0.83))) - 0.45)/0.14;
+    float band = exp(-q*q);
+    col = mix(base*0.5*(0.7 + 0.5*wrap), mix(base, vec3(1.0), 0.6)*1.15, band)*uExpo;
+  } else if (uMode > 1.5 && uMode < 2.5){               // chrome: mostly reflection
+    col = mix(col*0.12, refl*mix(vec3(1.0), base, 0.8)*1.1, 0.95);
+    clear = 0.0;
+  } else if (uMode > 2.5){                              // holographic
+    float a = fres*1.4 + dot(N, vec3(0.5,0.3,-0.8))*0.9;
+    vec3 rb = 0.5 + 0.5*cos(6.28318*(vec3(0.0,0.33,0.67) + a));
+    col = mix(col, rb*(0.7 + 0.4*wrap)*uExpo, 0.65);
+  }
+  col += refl*clear*0.62 + vec3(spec)*uTint;
+
+  col = mix(col, skin, 0.10*pow(edge, 3.0)*(1.0 - wall));          // rim picks up the colour of the finger
+  if (wall > 0.5) col = mix(col*0.88, base*1.05*uExpo + refl*0.12, 0.25) + vec3(spec)*0.4;
+  col += (hash(gl_FragCoord.xy + uTime) - 0.5)*0.03;                // match the grain of the camera
+
+  float a = wall > 0.5 ? 1.0 : 1.0 - 0.55*smoothstep(0.93, 1.0, edge);
+  a *= mix(0.55, 1.0, smoothstep(0.0, 0.07, along));                // polish thins out at the cuticle
+  col = clamp(col, 0.0, 1.0);
+  gl_FragColor = vec4(col*a, a);
+}`;
+
+function createRenderer(glCanvas){
+  let gl;
+  try { gl = glCanvas.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: true, depth: true, preserveDrawingBuffer: true }); } catch { gl = null; }
+  if (!gl) return { ok: false };
+  const compile = (type, src) => {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  };
+  let prog;
+  try {
+    prog = gl.createProgram();
+    gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  } catch (e) { return { ok: false, error: String(e) }; }
+  gl.useProgram(prog);
+  const U = n => gl.getUniformLocation(prog, n), A = n => gl.getAttribLocation(prog, n);
+  const loc = { base: U('uBase'), axes: U('uAxes'), scale: U('uScale'), res: U('uRes'), tex: U('uTex'), scene: U('uScene'), gloss: U('uGloss'), mode: U('uMode'), expo: U('uExpo'), time: U('uTime'), light: U('uLight'), tint: U('uTint') };
+  const attr = { pos: A('aPos'), nor: A('aNor'), uv: A('aUV'), meta: A('aMeta') };
+
+  const geoms = {};
+  const geom = shape => {
+    if (geoms[shape]) return geoms[shape];
+    const g = buildGeometry(shape);
+    const vbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, g.vertices, gl.STATIC_DRAW);
+    const ibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, g.indices, gl.STATIC_DRAW);
+    return geoms[shape] = { vbo, ibo, count: g.indices.length, stride: g.stride };
+  };
+
+  const TW = 256, TH = Math.round(256*LR);
+  const texCanvas = document.createElement('canvas'); texCanvas.width = TW; texCanvas.height = TH;
+  const tctx = texCanvas.getContext('2d');
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  let texKey = '';
+  const SHADER_ONLY = ['cateye', 'chrome', 'holo'];   // the shader makes the look; the texture is just the base colour
+  function bake(st, t){
+    const animated = st.design === 'glitter';
+    const key = [st.design, st.c1, st.c2, st.imageId].join('|');
+    if (!animated && key === texKey) return;
+    texKey = key;
+    const bakeSt = SHADER_ONLY.includes(st.design) ? { ...st, design: 'solid' } : st;
+    tctx.setTransform(1,0,0,1,0,0); tctx.clearRect(0, 0, TW, TH);
+    tctx.save(); tctx.translate(TW/2, TH);
+    paintDesign(tctx, TW, TH, bakeSt, t, 3);
+    tctx.restore();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texCanvas);
+  }
+
+  // small copy of the camera frame: reflections, colour cast, light direction
+  const SW = 64, SH = 64;
+  const sceneCanvas = document.createElement('canvas'); sceneCanvas.width = SW; sceneCanvas.height = SH;
+  const sctx = sceneCanvas.getContext('2d', { willReadFrequently: true });
+  const sceneTex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+  for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR],[gl.TEXTURE_MAG_FILTER, gl.LINEAR],[gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE],[gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([128,110,100,255]));
+  gl.activeTexture(gl.TEXTURE0);
+  const lightEst = { dir: [-0.45, -0.7, -0.55], expo: 1, tint: [1,1,1] };
+  let sceneN = 0;
+  function updateScene(src){
+    if (!src) return;
+    try {
+      sctx.drawImage(src, 0, 0, SW, SH);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sceneCanvas);
+      gl.activeTexture(gl.TEXTURE0);
+      if ((sceneN++ % 6) === 0){
+        const d = sctx.getImageData(0, 0, SW, SH).data;
+        let sr = 0, sg = 0, sb = 0, sl = 0, cx = 0, cy = 0, wsum = 0;
+        for (let y = 0; y < SH; y++) for (let x = 0; x < SW; x++){
+          const i = (y*SW + x)*4, r = d[i], g = d[i+1], b = d[i+2], l = (0.3*r + 0.59*g + 0.11*b)/255;
+          sr += r; sg += g; sb += b; sl += l;
+          const wt = l*l*l; cx += (x/SW - .5)*wt; cy += (y/SH - .5)*wt; wsum += wt;
+        }
+        const n = SW*SH, lum = sl/n, m = Math.max((sr+sg+sb)/3, 1);
+        const target = { dir: [-(cx/(wsum||1))*2.2 || -0.45, -(cy/(wsum||1))*2.2 - 0.35, -0.6], expo: Math.min(1.25, Math.max(0.7, 0.55 + lum*1.1)),
+                         tint: [0.85 + 0.15*(sr/m), 0.85 + 0.15*(sg/m), 0.85 + 0.15*(sb/m)] };
+        // brighter side of the frame is where the light comes from
+        target.dir = [(cx/(wsum||1))*-2.2, (cy/(wsum||1))*-2.2 - 0.45, -0.6];
+        const a = 0.25;
+        lightEst.dir = lightEst.dir.map((v, i) => v + (target.dir[i] - v)*a);
+        lightEst.expo += (target.expo - lightEst.expo)*a;
+        lightEst.tint = lightEst.tint.map((v, i) => v + (target.tint[i] - v)*a);
+      }
+    } catch {}
+  }
+
+  const unitPaths = {};
+  function shadows(ctx2d, hands, st){
+    const shape = SHAPES.find(s => s.key === st.shape) || SHAPES[0];
+    const path = unitPaths[st.shape] || (unitPaths[st.shape] = nailPath(st.shape, 1, LR));
+    for (const hand of hands){
+      if (!handVisible(hand, st.vis)) continue;
+      for (const f of hand.fingers){
+        const fr = nailFrame(hand, f); if (!fr) continue;
+        const { W, L } = nailSize(hand, f, fr, st), sy = L/LR;
+        const k = f.b + FIT_SHIFT + st.pos;
+        ctx2d.save();
+        ctx2d.setTransform(fr.X.x*W, fr.X.y*W, -fr.F.x*sy, -fr.F.y*sy, f.dip.x + fr.F.x*fr.seg*k, f.dip.y + fr.F.y*fr.seg*k);
+        ctx2d.shadowColor = 'rgba(40,10,10,.30)'; ctx2d.shadowBlur = W*.45; ctx2d.shadowOffsetY = W*.10;
+        ctx2d.fillStyle = 'rgba(40,10,10,.22)'; ctx2d.fill(path);
+        ctx2d.shadowColor = 'rgba(0,0,0,.45)'; ctx2d.shadowBlur = W*.10; ctx2d.shadowOffsetY = W*.025;
+        ctx2d.fillStyle = 'rgba(0,0,0,.25)'; ctx2d.fill(path);
+        ctx2d.restore();
+      }
+    }
+  }
+
+  function render(hands, st, t, w, h, sceneSrc){
+    if (glCanvas.width !== w || glCanvas.height !== h){ glCanvas.width = w; glCanvas.height = h; }
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0, 0, 0, 0); gl.clearDepth(1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    if (!hands.length) return;
+    const g = geom(st.shape);
+    const design = DESIGNS.find(d => d.key === st.design);
+    bake(st, t);
+    gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.disable(gl.CULL_FACE);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.useProgram(prog);
+    gl.bindBuffer(gl.ARRAY_BUFFER, g.vbo); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.ibo);
+    const B = 4, S = g.stride*B;
+    for (const [a, size, off] of [[attr.pos,3,0],[attr.nor,3,3],[attr.uv,2,6],[attr.meta,3,8]]){
+      gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, size, gl.FLOAT, false, S, off*B);
+    }
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1i(loc.tex, 0);
+    updateScene(sceneSrc);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, sceneTex); gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1i(loc.scene, 1);
+    gl.uniform1f(loc.expo, lightEst.expo);
+    gl.uniform1f(loc.time, (t*0.001)%7.0);
+    gl.uniform3f(loc.light, lightEst.dir[0], lightEst.dir[1], lightEst.dir[2]);
+    gl.uniform3f(loc.tint, lightEst.tint[0], lightEst.tint[1], lightEst.tint[2]);
+    gl.uniform2f(loc.res, w, h);
+    gl.uniform1f(loc.gloss, st.gloss);
+    gl.uniform1f(loc.mode, design ? design.mode : 0);
+    const axes = new Float32Array(9);
+    for (const hand of hands){
+      if (!handVisible(hand, st.vis)) continue;
+      for (const f of hand.fingers){
+        const fr = nailFrame(hand, f); if (!fr) continue;
+        const { W, L } = nailSize(hand, f, fr, st);
+        const k = f.b + FIT_SHIFT + st.pos;
+        axes.set([fr.X.x, fr.X.y, fr.X.z, fr.F.x, fr.F.y, fr.F.z, fr.N.x, fr.N.y, fr.N.z]);
+        gl.uniform3f(loc.base, f.dip.x + fr.F.x*fr.seg*k, f.dip.y + fr.F.y*fr.seg*k, 0);
+        gl.uniformMatrix3fv(loc.axes, false, axes);
+        gl.uniform3f(loc.scale, W, L/LR, W);
+        gl.drawElements(gl.TRIANGLES, g.count, gl.UNSIGNED_SHORT, 0);
+      }
+    }
+  }
+  return { ok: true, render, shadows };
+}
+
 /* ---------- Smoothing between frames ---------- */
 let smoothed = [];
 const lerp = (a,b,k) => a + (b-a)*k;
-const lerpPt = (a,b,k) => ({ x: lerp(a.x,b.x,k), y: lerp(a.y,b.y,k) });
+const lerpPt = (a,b,k) => v3(lerp(a.x,b.x,k), lerp(a.y,b.y,k), lerp(a.z,b.z,k));
 function smoothHands(fresh){
-  const K = .6, taken = new Set(), next = [];
+  const K = .75, taken = new Set(), next = [];
   for (const h of fresh){
     let best = -1, bd = Infinity;
     smoothed.forEach((p,i) => {
@@ -387,6 +808,7 @@ function smoothHands(fresh){
       const p = smoothed[best];
       next.push({
         wrist: lerpPt(p.wrist, h.wrist, K), ref: lerp(p.ref, h.ref, K),
+        normal: norm3(lerpPt(p.normal, h.normal, K)), facing: h.facing,
         fingers: h.fingers.map((f,i) => ({ ...f, tip: lerpPt(p.fingers[i].tip, f.tip, K), dip: lerpPt(p.fingers[i].dip, f.dip, K) }))
       });
     } else next.push(h);
@@ -408,22 +830,18 @@ function drawShapeIcon(canvas, key, fill, stroke){
   c.lineWidth = 1.4; c.strokeStyle = stroke; c.stroke(p);
 }
 
-/* ---------- Public handle (useful for debugging in the console) ---------- */
-window.NailFilter = { SHAPES, DESIGNS, state, nailPath, toHands, drawNails, smoothHands, FINGERS };
-
 /* ---------- UI ---------- */
 const $ = id => document.getElementById(id);
 const saved = (() => { try { return JSON.parse(localStorage.getItem('tirnak-provasi') || '{}'); } catch { return {}; } })();
-for (const k of ['shape','design','c1','c2','len','wid','pos','gloss']) if (saved[k] !== undefined) state[k] = saved[k];
-if (state.design === 'image') state.design = 'solid';
-const persist = () => { try { const { image, ...rest } = state; localStorage.setItem('tirnak-provasi', JSON.stringify(rest)); } catch {} };
+for (const k of ['shape','design','c1','c2','len','wid','pos','gloss','vis']) if (saved[k] !== undefined) state[k] = saved[k];
+if (state.design === 'image' || !DESIGNS.some(d => d.key === state.design)) state.design = 'solid';
+const persist = () => { try { const { image, imageId, ...rest } = state; localStorage.setItem('tirnak-provasi', JSON.stringify(rest)); } catch {} };
 
 function buildShapes(){
   const row = $('shapes'); row.textContent = '';
   for (const s of SHAPES){
     const b = document.createElement('button');
     b.className = 'shape'; b.type = 'button'; b.dataset.key = s.key;
-    b.setAttribute('aria-pressed', state.shape === s.key);
     const cv = document.createElement('canvas'); cv.width = 36; cv.height = 52;
     const sp = document.createElement('span'); sp.textContent = s.label;
     b.append(cv, sp);
@@ -469,19 +887,21 @@ function syncUI(){
     document.querySelectorAll('#' + rowId + ' .swatch[data-hex]').forEach(b => b.setAttribute('aria-pressed', b.dataset.hex.toLowerCase() === state[prop].toLowerCase()));
   }
   const d = DESIGNS.find(x => x.key === state.design);
-  const showColors = state.design !== 'image';
-  $('colors1').parentElement.hidden = !showColors;
+  $('colors1').parentElement.hidden = state.design === 'image';
   $('sec2').hidden = !(d && d.two);
   $('c1label').textContent = d && d.two ? 'Ana renk' : 'Renk';
   $('len').value = state.len; $('wid').value = state.wid; $('pos').value = state.pos; $('gloss').value = state.gloss;
+  document.querySelectorAll('#vis .pill').forEach(b => b.setAttribute('aria-pressed', b.dataset.vis === state.vis));
 }
-for (const [id, prop] of [['len','len'],['wid','wid'],['pos','pos'],['gloss','gloss']]){
-  $(id).addEventListener('input', e => { state[prop] = +e.target.value; persist(); });
+for (const id of ['len','wid','pos','gloss']){
+  $(id).addEventListener('input', e => { state[id] = +e.target.value; persist(); });
 }
+document.querySelectorAll('#vis .pill').forEach(b => b.addEventListener('click', () => { state.vis = b.dataset.vis; syncUI(); persist(); }));
 $('file').addEventListener('change', async e => {
   const f = e.target.files && e.target.files[0]; if (!f) return;
   try {
     state.image = await createImageBitmap(f);
+    state.imageId++;
     state.design = 'image';
     syncUI();
   } catch { setStatus('Görsel açılamadı', true); }
@@ -503,8 +923,11 @@ buildShapes(); buildDesigns(); buildSwatches('colors1','c1'); buildSwatches('col
 })();
 
 /* ---------- Camera + detection loop ---------- */
-const video = $('cam'), canvas = $('view'), ctx = canvas.getContext('2d', { alpha: false });
+const video = $('cam'), canvas = $('view'), glc = $('gl'), ctx = canvas.getContext('2d', { alpha: false });
+const renderer = createRenderer(glc);
 let stream = null, landmarker = null, facing = 'environment', running = false, lastVideoTime = -1, misses = 0, lastHands = [], lastCount = -1;
+
+window.NailFilter = { SHAPES, DESIGNS, state, nailPath, buildGeometry, toHands, drawNails, smoothHands, createRenderer, renderer, FINGERS };
 
 function setStatus(text, warn){ const s = $('status'); if (s.textContent !== text) s.textContent = text; s.classList.toggle('warn', !!warn); }
 
@@ -521,7 +944,7 @@ async function startCamera(){
   const track = stream.getVideoTracks()[0];
   const fm = track && track.getSettings && track.getSettings().facingMode;
   const mirrored = fm ? fm === 'user' : facing === 'user';
-  canvas.style.transform = mirrored ? 'scaleX(-1)' : 'none';
+  canvas.style.transform = glc.style.transform = mirrored ? 'scaleX(-1)' : 'none';
   canvas.dataset.mirrored = mirrored ? '1' : '';
   smoothed = []; lastVideoTime = -1;
 }
@@ -563,7 +986,10 @@ function frame(now){
     if (fresh.length){ misses = 0; lastHands = smoothHands(fresh); }
     else if (++misses > 4){ lastHands = []; smoothed = []; }
   }
-  if (lastHands.length) drawNails(ctx, lastHands, state, now);
+  if (renderer.ok){
+    if (lastHands.length) renderer.shadows(ctx, lastHands, state);
+    renderer.render(lastHands, state, now, w, h, canvas);
+  } else if (lastHands.length) drawNails(ctx, lastHands, state, now);
   if (landmarker && lastHands.length !== lastCount){
     lastCount = lastHands.length;
     setStatus(lastCount ? (lastCount + ' el algılandı') : 'El aranıyor. Elini kameraya göster');
@@ -606,14 +1032,14 @@ $('snap').addEventListener('click', async () => {
   const x = c.getContext('2d');
   if (canvas.dataset.mirrored){ x.translate(c.width, 0); x.scale(-1, 1); }
   x.drawImage(canvas, 0, 0);
+  if (renderer.ok && glc.width === c.width) x.drawImage(glc, 0, 0);
   const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', .92));
   if (!blob) return;
   const file = new File([blob], 'tirnak-denemesi.jpg', { type: 'image/jpeg' });
   if (navigator.canShare && navigator.canShare({ files: [file] })){
     try { await navigator.share({ files: [file] }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
   }
-  const url = URL.createObjectURL(blob);
-  $('shotimg').src = url; $('shot').hidden = false;
+  $('shotimg').src = URL.createObjectURL(blob); $('shot').hidden = false;
 });
 $('shotclose').addEventListener('click', () => { $('shot').hidden = true; });
 
