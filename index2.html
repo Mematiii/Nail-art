@@ -1,0 +1,968 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111012">
+<title>Tırnak Provası</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Manrope:wght@400;600;700&display=swap">
+<style>
+/* Layout: full-height camera stage on top, scrollable picker panel below.
+   Palette comes from the nude tones of a nail-shape chart; one accent, dark UI so the camera feed leads. */
+:root{
+  --ink:#111012; --panel:#1a181b; --line:#2e2b30; --text:#f4efeb; --muted:#a79d9b;
+  --accent:#e9b9a5; --accent-ink:#2a1812; --danger:#ff9a8f;
+  --font-body:"Manrope",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-display:"Cormorant Garamond","Iowan Old Style",Georgia,serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{background:var(--ink);color:var(--text);font:400 14px/1.45 var(--font-body);overflow:hidden;overscroll-behavior:none;-webkit-text-size-adjust:100%}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+#app{height:100vh;height:100dvh;display:flex;flex-direction:column}
+#stage{position:relative;flex:1 1 auto;min-height:0;background:#000;overflow:hidden}
+#view,#gl{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#view{background:#000}
+#gl{pointer-events:none}
+#cam{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+
+.glass{background:rgba(17,16,18,.62);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+#status{position:absolute;left:max(12px,env(safe-area-inset-left));top:calc(env(safe-area-inset-top) + 12px);max-width:calc(100% - 90px);padding:7px 12px;border-radius:999px;font-size:12px;font-weight:600;letter-spacing:.02em}
+#status.warn{color:var(--danger)}
+#tools{position:absolute;right:max(12px,env(safe-area-inset-right));top:calc(env(safe-area-inset-top) + 12px);display:flex;flex-direction:column;gap:10px}
+.round{width:46px;height:46px;border-radius:50%;border:0;display:grid;place-items:center;cursor:pointer}
+.round svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.round.primary{background:var(--accent);color:var(--accent-ink)}
+
+#intro{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:16px;
+  padding:calc(env(safe-area-inset-top) + 24px) max(24px,env(safe-area-inset-right)) 24px max(24px,env(safe-area-inset-left));
+  background:radial-gradient(120% 80% at 80% 0%,#2a1f1f 0%,var(--ink) 60%)}
+#intro[hidden]{display:none}
+#motif{width:100%;max-width:340px;height:auto}
+#intro h1{margin:0;font:600 clamp(34px,10vw,48px)/1 var(--font-display);letter-spacing:.01em;text-wrap:balance}
+#intro p{margin:0;max-width:34ch;color:var(--muted)}
+#intro ul{margin:0;padding:0;list-style:none;display:grid;gap:6px;color:var(--muted);font-size:13px}
+#intro li::before{content:"";display:inline-block;width:14px;height:1px;background:var(--accent);vertical-align:middle;margin-right:10px}
+#go{border:0;border-radius:999px;padding:14px 26px;background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:15px;cursor:pointer}
+#go[disabled]{opacity:.6}
+#msg{min-height:1.4em;max-width:36ch;font-size:13px;color:var(--danger)}
+
+#panel{flex:none;max-height:44vh;max-height:44dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--panel);border-top:1px solid var(--line);
+  padding:12px max(16px,env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));display:grid;grid-template-columns:minmax(0,1fr);gap:14px;overflow-x:hidden}
+#panel>*{min-width:0}
+.sec h2{margin:0 0 8px;font:600 11px/1 var(--font-body);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.row{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.row::-webkit-scrollbar{display:none}
+.shape{flex:none;width:70px;padding:8px 4px 7px;border-radius:12px;border:1px solid var(--line);background:transparent;display:grid;justify-items:center;gap:5px;cursor:pointer}
+.shape canvas{width:36px;height:52px}
+.shape span{font:600 10.5px/1.15 var(--font-display);letter-spacing:.1em;text-transform:uppercase;text-align:center}
+.pill{flex:none;padding:9px 14px;border-radius:999px;border:1px solid var(--line);background:transparent;font-weight:600;font-size:13px;cursor:pointer;white-space:nowrap}
+.shape[aria-pressed=true],.pill[aria-pressed=true]{border-color:var(--accent);background:rgba(233,185,165,.13)}
+.swatch{flex:none;width:34px;height:34px;padding:0;border-radius:50%;border:2px solid transparent;box-shadow:inset 0 0 0 1px rgba(255,255,255,.2);cursor:pointer;position:relative}
+.swatch[aria-pressed=true]{border-color:var(--ink);outline:2px solid var(--text);outline-offset:0}
+.swatch.custom{background:conic-gradient(#f66,#fd6,#6f9,#6df,#96f,#f6c,#f66);overflow:hidden}
+.swatch.custom input{position:absolute;inset:-6px;width:60px;height:60px;opacity:0;cursor:pointer}
+details.more summary{cursor:pointer;font:600 11px/1 var(--font-body);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);padding:2px 0}
+.sliders{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin-top:12px}
+.slider{display:grid;gap:4px;font-size:12px;color:var(--muted);min-width:0}
+.slider input{width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:14px;font-size:12px;color:var(--muted)}
+.seg .lbl{flex:0 0 100%}
+.seg .pill{padding:7px 14px;font-size:12px}
+.hint{margin:6px 0 0;font-size:11.5px;color:var(--muted);max-width:44ch}
+
+#shot{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px}
+#shot[hidden]{display:none}
+#shot img{max-width:100%;max-height:70dvh;border-radius:10px}
+#shot p{margin:0;color:var(--muted);text-align:center;max-width:32ch}
+#shot button{border:0;border-radius:999px;padding:12px 24px;background:var(--accent);color:var(--accent-ink);font-weight:700;cursor:pointer}
+@media (prefers-reduced-motion:no-preference){.pill,.shape,.swatch{transition:border-color .15s,background-color .15s}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <video id="cam" playsinline muted autoplay></video>
+    <canvas id="view" aria-label="Canlı kamera görüntüsü, tırnak denemesi"></canvas>
+    <canvas id="gl" aria-hidden="true"></canvas>
+    <div id="status" class="glass" role="status">Kamera kapalı</div>
+    <div id="tools">
+      <button id="flip" class="round glass" aria-label="Kamerayı çevir">
+        <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3M4 4v4h4M4 13a8 8 0 0 0 14.9 3M20 20v-4h-4"/></svg>
+      </button>
+      <button id="snap" class="round primary" aria-label="Fotoğraf çek">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/></svg>
+      </button>
+    </div>
+    <div id="intro">
+      <canvas id="motif" width="340" height="96"></canvas>
+      <h1>Tırnak Provası</h1>
+      <p>Elini kameraya göster. Seçtiğin şekil ve tasarım parmaklarının üzerinde, 3 boyutlu ve canlı görünür.</p>
+      <ul>
+        <li>El sırtı kameraya dönük olsun</li>
+        <li>Işık yeterli, parmaklar açık</li>
+        <li>Görüntü cihazında işlenir, kaydedilmez</li>
+      </ul>
+      <button id="go">Kamerayı aç</button>
+      <div id="msg" role="alert"></div>
+    </div>
+  </div>
+
+  <section id="panel" aria-label="Tırnak seçenekleri">
+    <div class="sec"><h2>Şekil</h2><div class="row" id="shapes"></div></div>
+    <div class="sec"><h2>Desen</h2><div class="row" id="designs"></div></div>
+    <div class="sec"><h2 id="c1label">Renk</h2><div class="row" id="colors1"></div></div>
+    <div class="sec" id="sec2" hidden><h2>İkinci renk</h2><div class="row" id="colors2"></div></div>
+    <details class="more">
+      <summary>Ayarlar</summary>
+      <div class="sliders">
+        <label class="slider">Uzunluk<input id="len" type="range" min="0.6" max="1.6" step="0.01" value="1"></label>
+        <label class="slider">Genişlik<input id="wid" type="range" min="0.7" max="1.4" step="0.01" value="1"></label>
+        <label class="slider">Konum<input id="pos" type="range" min="-0.15" max="0.15" step="0.005" value="0"></label>
+        <label class="slider">Parlaklık (sola: mat)<input id="gloss" type="range" min="0" max="1" step="0.01" value="0.6"></label>
+      </div>
+      <div class="seg" id="vis" role="group" aria-label="El sırtı algılama">
+        <span class="lbl">El sırtı algılama</span>
+        <button class="pill" type="button" data-vis="off">Kapalı</button>
+        <button class="pill" type="button" data-vis="on">Açık</button>
+        <button class="pill" type="button" data-vis="inv">Ters</button>
+      </div>
+      <p class="hint">Açık: tırnaklar yalnızca el sırtı kameraya dönükken görünür. Tırnaklar yanlış tarafta çıkıyorsa Ters'i seç.</p>
+    </details>
+  </section>
+</div>
+
+<div id="shot" hidden>
+  <img id="shotimg" alt="Tırnak denemesi fotoğrafı">
+  <p>Fotoğrafa basılı tutup "Fotoğraflara Ekle" seçeneğini kullan.</p>
+  <button id="shotclose">Kapat</button>
+</div>
+
+<input id="file" type="file" accept="image/*" hidden>
+
+<script type="module">
+/* ---------- Constants ---------- */
+const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+const VISION_BASES = [
+  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14',
+  'https://unpkg.com/@mediapipe/tasks-vision@0.10.14'
+];
+const Z_DAMP = 0.6;   // MediaPipe depth is noisy; only part of it is trusted for tilt
+
+// MediaPipe hand landmark ids: tip and the joint just below it.
+// wf: nail width relative to the index finger, in hand-size terms. ws: same, in fingertip-length terms.
+// b / l: where the nail starts and how long it is, as a share of the tip-to-joint distance.
+const FINGERS = [
+  { id: 'thumb',  tip: 4,  dip: 3,  wf: 1.23, ws: 1.05, b: 0.30, l: 0.68 },
+  { id: 'index',  tip: 8,  dip: 7,  wf: 1.00, ws: 1.00, b: 0.38, l: 0.60 },
+  { id: 'middle', tip: 12, dip: 11, wf: 1.00, ws: 0.96, b: 0.38, l: 0.60 },
+  { id: 'ring',   tip: 16, dip: 15, wf: 0.88, ws: 0.93, b: 0.40, l: 0.58 },
+  { id: 'pinky',  tip: 20, dip: 19, wf: 0.70, ws: 0.87, b: 0.46, l: 0.52 }
+];
+
+// ext: how far the free edge reaches past the fingertip, as a share of the fingertip segment.
+const SHAPES = [
+  { key: 'oval',       label: 'Oval',             ext: 0.05 },
+  { key: 'square',     label: 'Kare',             ext: 0.08 },
+  { key: 'softsquare', label: 'Yumuşak kare',     ext: 0.08 },
+  { key: 'almond',     label: 'Badem',            ext: 0.22 },
+  { key: 'coffin',     label: 'Tabut / Balerin',  ext: 0.26 },
+  { key: 'stiletto',   label: 'Stiletto',         ext: 0.34 }
+];
+
+// mode: how the 3D shader treats the design (0 texture, 1 cat eye, 2 chrome, 3 holographic)
+const DESIGNS = [
+  { key: 'solid',   label: 'Düz',         two: false, mode: 0 },
+  { key: 'french',  label: 'French',      two: true,  mode: 0 },
+  { key: 'ombre',   label: 'Ombre',       two: true,  mode: 0 },
+  { key: 'stripes', label: 'Çizgili',     two: true,  mode: 0 },
+  { key: 'marble',  label: 'Mermer',      two: true,  mode: 0 },
+  { key: 'glitter', label: 'Pırıltı',     two: true,  mode: 0 },
+  { key: 'gems',    label: 'Taşlı',       two: true,  mode: 0 },
+  { key: 'cateye',  label: 'Kedi gözü',   two: false, mode: 1 },
+  { key: 'chrome',  label: 'Krom',        two: false, mode: 2 },
+  { key: 'holo',    label: 'Holografik',  two: false, mode: 3 }
+];
+
+const SWATCHES = ['#D9A78F','#E8A0B4','#B3122B','#5E1224','#FF6F61','#B79CED','#5B8DEF','#1F7A5C','#121212','#F6F3EE','#D4AF37'];
+
+const state = {
+  shape: 'almond', design: 'solid',
+  c1: '#D9A78F', c2: '#F6F3EE',
+  len: 1, wid: 1, pos: 0, gloss: 0.6, vis: 'off',
+  image: null, imageId: 0
+};
+
+/* ---------- Small vector helpers (3D) ---------- */
+const v3 = (x,y,z) => ({ x, y, z });
+const sub = (a,b) => v3(a.x-b.x, a.y-b.y, a.z-b.z);
+const mulS = (a,k) => v3(a.x*k, a.y*k, a.z*k);
+const dot3 = (a,b) => a.x*b.x + a.y*b.y + a.z*b.z;
+const cross3 = (a,b) => v3(a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x);
+const len3 = a => Math.hypot(a.x, a.y, a.z);
+const norm3 = a => { const l = len3(a) || 1; return v3(a.x/l, a.y/l, a.z/l); };
+
+/* ---------- Colour helpers ---------- */
+function hexToRgb(h){
+  h = h.replace('#','');
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  const n = parseInt(h, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function mix(h, t){               // t>0 towards white, t<0 towards black
+  const [r,g,b] = hexToRgb(h), k = t < 0 ? 0 : 255, a = Math.abs(t);
+  return `rgb(${Math.round(r+(k-r)*a)},${Math.round(g+(k-g)*a)},${Math.round(b+(k-b)*a)})`;
+}
+function alpha(h, a){ const [r,g,b] = hexToRgb(h); return `rgba(${r},${g},${b},${a})`; }
+function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+/* ---------- Nail outline (local space: base centre at 0,0; free edge towards -y) ---------- */
+function nailSegs(shape, W, L){
+  const hw = W / 2, pts = [[0,0]], segs = [];
+  const cubic = (c1x,c1y,c2x,c2y,x,y) => { segs.push([c1x,c1y,c2x,c2y,x,y]); pts.push([x,y]); };
+  const line = (x,y) => {
+    const [px,py] = pts[pts.length-1];
+    cubic(px+(x-px)/3, py+(y-py)/3, px+2*(x-px)/3, py+2*(y-py)/3, x, y);
+  };
+  cubic(hw*.55, L*.02, hw, -L*.08, hw, -L*.26);          // cuticle arch up to the side wall
+  const corner = r => { line(hw, -L+r); cubic(hw, -L+r*.4, hw-r*.4, -L, hw-r, -L); line(0, -L); };
+  switch (shape){
+    case 'oval':       line(hw, -L*.58); cubic(hw, -L*.84, hw*.52, -L, 0, -L); break;
+    case 'square':     corner(hw*.14); break;
+    case 'softsquare': corner(hw*.5); break;
+    case 'almond':     line(hw, -L*.44); cubic(hw, -L*.7, hw*.5, -L*.9, hw*.17, -L*.985); cubic(hw*.1, -L*.998, hw*.05, -L, 0, -L); break;
+    case 'coffin': {
+      const rc = hw*.1, tw = hw*.62;
+      line(hw, -L*.5); line(tw, -L+rc);
+      cubic(tw, -L+rc*.4, tw-rc*.4, -L, tw-rc, -L); line(0, -L); break;
+    }
+    case 'stiletto':   line(hw, -L*.34); cubic(hw*.96, -L*.6, hw*.3, -L*.88, 0, -L); break;
+    default:           line(hw, -L*.58); cubic(hw, -L*.84, hw*.52, -L, 0, -L);
+  }
+  return { segs, pts };
+}
+function nailPath(shape, W, L){
+  const { segs, pts } = nailSegs(shape, W, L);
+  const p = new Path2D();
+  p.moveTo(0,0);
+  for (const s of segs) p.bezierCurveTo(s[0],s[1],s[2],s[3],s[4],s[5]);
+  for (let i = segs.length-1; i >= 0; i--){
+    const s = segs[i], [px,py] = pts[i];
+    p.bezierCurveTo(-s[2], s[3], -s[0], s[1], -px, py);
+  }
+  p.closePath();
+  return p;
+}
+
+/* ---------- Painting a design (shared by the 3D texture and the 2D fallback) ---------- */
+function drawGem(ctx, x, y, r, col){
+  const g = ctx.createRadialGradient(x - r*.3, y - r*.35, r*.1, x, y, r);
+  g.addColorStop(0, '#ffffff'); g.addColorStop(.35, mix(col, .5)); g.addColorStop(1, mix(col, -.55));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = Math.max(1, r*.12);
+  ctx.beginPath(); ctx.moveTo(x - r*.72, y); ctx.lineTo(x, y - r*.72); ctx.lineTo(x + r*.72, y); ctx.lineTo(x, y + r*.72); ctx.closePath(); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.beginPath(); ctx.arc(x - r*.32, y - r*.38, r*.17, 0, 6.2832); ctx.fill();
+}
+
+function paintDesign(ctx, W, L, st, t, seed){
+  const hw = W/2, c1 = st.c1, c2 = st.c2;
+  ctx.fillStyle = c1;
+  ctx.fillRect(-hw-2, -L-2, W+4, L+4);
+  switch (st.design){
+    case 'french':
+      ctx.fillStyle = c2;
+      ctx.beginPath();
+      ctx.moveTo(-hw*1.1, -L*.74);
+      ctx.quadraticCurveTo(0, -L*.58, hw*1.1, -L*.74);
+      ctx.lineTo(hw*1.1, -L*1.1); ctx.lineTo(-hw*1.1, -L*1.1);
+      ctx.closePath(); ctx.fill();
+      break;
+    case 'ombre': {
+      const g = ctx.createLinearGradient(0, 0, 0, -L);
+      g.addColorStop(0, c1); g.addColorStop(1, c2);
+      ctx.fillStyle = g; ctx.fillRect(-hw-2, -L-2, W+4, L+4);
+      break;
+    }
+    case 'stripes':
+      ctx.strokeStyle = c2; ctx.lineWidth = W*.1; ctx.lineCap = 'butt';
+      for (let x = -hw; x <= hw + L*.5; x += W*.26){
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x - L*.5, -L); ctx.stroke();
+      }
+      break;
+    case 'marble': {
+      const r = mulberry32(seed*7919 + 13);
+      ctx.lineCap = 'round';
+      for (let k = 0; k < 4; k++){
+        const y0 = -r()*L, y1 = -r()*L;
+        const cx1 = -hw + r()*W, cy1 = y0 - L*(.2 + r()*.3);
+        const cx2 = -hw + r()*W, cy2 = y1 + L*(.2 + r()*.3);
+        for (const [w,a] of [[W*.07,.10],[W*.035,.22],[W*.012,.55]]){
+          ctx.strokeStyle = alpha(c2, a); ctx.lineWidth = w;
+          ctx.beginPath(); ctx.moveTo(-hw*1.1, y0);
+          ctx.bezierCurveTo(cx1, cy1, cx2, cy2, hw*1.1, y1); ctx.stroke();
+        }
+      }
+      break;
+    }
+    case 'glitter': {
+      const r = mulberry32(seed*104729 + 5);
+      for (let i = 0; i < 70; i++){
+        const x = (r()*2-1)*hw, y = -r()*L, rad = W*(.012 + r()*.028), ph = r()*6.28, sp = .002 + r()*.004;
+        const a = .25 + .75*Math.max(0, Math.sin(t*sp + ph));
+        ctx.fillStyle = alpha(c2, a);
+        ctx.beginPath(); ctx.arc(x, y, rad, 0, 6.2832); ctx.fill();
+        if (rad > W*.03 && a > .8){
+          ctx.strokeStyle = alpha('#ffffff', a); ctx.lineWidth = Math.max(1, rad*.5);
+          ctx.beginPath(); ctx.moveTo(x-rad*2.2, y); ctx.lineTo(x+rad*2.2, y); ctx.moveTo(x, y-rad*2.2); ctx.lineTo(x, y+rad*2.2); ctx.stroke();
+        }
+      }
+      break;
+    }
+    case 'gems':
+      drawGem(ctx, 0, -L*.2, W*.13, c2);
+      drawGem(ctx, -hw*.52, -L*.37, W*.07, c2);
+      drawGem(ctx, hw*.52, -L*.37, W*.07, c2);
+      drawGem(ctx, 0, -L*.5, W*.045, c2);
+      break;
+    case 'cateye': {
+      const g = ctx.createLinearGradient(-hw, 0, hw, 0);
+      g.addColorStop(0, mix(c1,-.35)); g.addColorStop(.36, mix(c1,-.1));
+      g.addColorStop(.5, mix(c1,.6)); g.addColorStop(.64, mix(c1,-.1)); g.addColorStop(1, mix(c1,-.4));
+      ctx.fillStyle = g; ctx.fillRect(-hw-2, -L-2, W+4, L+4);
+      break;
+    }
+    case 'chrome': {
+      const g = ctx.createLinearGradient(-hw, -L, hw, 0);
+      g.addColorStop(0, mix(c1,.7)); g.addColorStop(.35, mix(c1,-.45)); g.addColorStop(.55, mix(c1,.55)); g.addColorStop(1, mix(c1,-.5));
+      ctx.fillStyle = g; ctx.fillRect(-hw-2, -L-2, W+4, L+4);
+      break;
+    }
+    case 'holo': {
+      const g = ctx.createLinearGradient(-hw, 0, hw, -L);
+      ['#ff9ad5','#ffd59a','#c8ff9a','#9affea','#9ab8ff','#d59aff'].forEach((c,i,a) => g.addColorStop(i/(a.length-1), c));
+      ctx.fillStyle = g; ctx.fillRect(-hw-2, -L-2, W+4, L+4);
+      break;
+    }
+    case 'image':
+      if (st.image){
+        const iw = st.image.width, ih = st.image.height, s = Math.max(W/iw, L/ih);
+        ctx.drawImage(st.image, -iw*s/2, -L/2 - ih*s/2, iw*s, ih*s);
+      }
+      break;
+  }
+}
+
+/* ---------- 2D fallback painter (used when WebGL is unavailable) ---------- */
+function paintGloss(ctx, W, L, amount){
+  const hw = W/2;
+  ctx.save(); ctx.globalAlpha = amount;
+  const g = ctx.createLinearGradient(0, -L*.1, 0, -L*.9);
+  g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(.25, 'rgba(255,255,255,.5)');
+  g.addColorStop(.75, 'rgba(255,255,255,.35)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.ellipse(-hw*.3, -L*.5, hw*.17, L*.4, 0, 0, 6.2832); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.7)';
+  ctx.beginPath(); ctx.ellipse(-hw*.42, -L*.82, hw*.07, L*.05, .3, 0, 6.2832); ctx.fill();
+  ctx.restore();
+}
+function paintNail(ctx, W, L, st, t, seed){
+  const hw = W/2, path = nailPath(st.shape, W, L);
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,.28)'; ctx.shadowBlur = W*.14; ctx.shadowOffsetY = W*.03;
+  ctx.fillStyle = st.c1; ctx.fill(path);
+  ctx.restore();
+  ctx.save();
+  ctx.clip(path);
+  paintDesign(ctx, W, L, st, t, seed);
+  const side = ctx.createLinearGradient(-hw, 0, hw, 0);
+  side.addColorStop(0, 'rgba(0,0,0,.20)'); side.addColorStop(.3, 'rgba(0,0,0,0)');
+  side.addColorStop(.72, 'rgba(255,255,255,.06)'); side.addColorStop(1, 'rgba(0,0,0,.18)');
+  ctx.fillStyle = side; ctx.fillRect(-hw-2, -L-2, W+4, L+4);
+  const cut = ctx.createLinearGradient(0, 0, 0, -L*.3);
+  cut.addColorStop(0, 'rgba(0,0,0,.16)'); cut.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = cut; ctx.fillRect(-hw-2, -L*.3, W+4, L*.3+2);
+  if (st.gloss > 0) paintGloss(ctx, W, L, st.gloss);
+  ctx.restore();
+  ctx.lineWidth = Math.max(1, W*.03); ctx.strokeStyle = 'rgba(0,0,0,.3)'; ctx.stroke(path);
+}
+
+/* ---------- Landmarks -> hands with 3D pose ---------- */
+function toHands(result, w, h){
+  const out = [];
+  (result.landmarks || []).forEach((lm, hi) => {
+    const P = i => v3(lm[i].x*w, lm[i].y*h, (lm[i].z || 0)*w*Z_DAMP);
+    const p0 = P(0), p5 = P(5), p9 = P(9), p17 = P(17);
+    const handW = len3(sub(p5, p17)), handLen = len3(sub(p0, p9));
+    // Back-of-hand direction, always oriented towards the camera (camera looks along +z, nearer = smaller z).
+    let n = cross3(sub(p5, p0), sub(p17, p0));
+    if (n.z > 0) n = mulS(n, -1);
+    n = len3(n) < 1e-6 ? v3(0, 0, -1) : norm3(n);
+    // Chirality from the image plane. A raw (un-mirrored) frame swaps MediaPipe's Left/Right label.
+    const s2 = Math.sign((p5.x-p0.x)*(p17.y-p0.y) - (p5.y-p0.y)*(p17.x-p0.x)) || 1;
+    const cat = result.handedness && result.handedness[hi] && result.handedness[hi][0];
+    const c = cat && cat.categoryName === 'Left' ? 1 : -1;
+    out.push({
+      wrist: p0, ref: Math.max(handW, handLen*.6), normal: n, facing: s2*c,
+      fingers: FINGERS.map(f => ({ id: f.id, wf: f.wf, ws: f.ws, b: f.b, l: f.l, tip: P(f.tip), dip: P(f.dip) }))
+    });
+  });
+  return out;
+}
+const handVisible = (hand, vis) => vis === 'on' ? hand.facing > 0 : vis === 'inv' ? hand.facing < 0 : true;
+
+/* ---------- 2D fallback: place painted nails ---------- */
+function drawNails(ctx, hands, st, t){
+  const shape = SHAPES.find(s => s.key === st.shape) || SHAPES[0];
+  hands.forEach((hand, hi) => {
+    if (!handVisible(hand, st.vis)) return;
+    hand.fingers.forEach((f, fi) => {
+      const dx = f.tip.x - f.dip.x, dy = f.tip.y - f.dip.y, seg = Math.hypot(dx, dy);
+      if (seg < 4) return;
+      const ux = dx/seg, uy = dy/seg;
+      const bx = f.dip.x + ux*seg*(f.b + st.pos), by = f.dip.y + uy*seg*(f.b + st.pos);
+      const W = 0.5*(0.172*hand.ref*f.wf + 0.54*seg*f.ws)*st.wid;
+      const L = Math.max(seg*(f.l + shape.ext)*st.len, W*.55);
+      ctx.save();
+      ctx.translate(bx, by);
+      ctx.rotate(Math.atan2(dy, dx) + Math.PI/2);
+      paintNail(ctx, W, L, st, t, hi*5 + fi + 1);
+      ctx.restore();
+    });
+  });
+}
+
+/* ---------- Finger frame in 3D: x across the nail, y towards the tip, z out of the nail ---------- */
+function nailFrame(hand, f){
+  const d = sub(f.tip, f.dip), seg = len3(d);
+  if (seg < 4) return null;
+  const F = mulS(d, 1/seg);
+  let N = sub(hand.normal, mulS(F, dot3(hand.normal, F)));
+  if (len3(N) < 0.2){ const z = v3(0, 0, -1); N = sub(z, mulS(F, dot3(z, F))); }
+  N = norm3(N);
+  return { F, N, X: cross3(F, N), seg };
+}
+function nailSize(hand, f, fr, st){
+  const shape = SHAPES.find(s => s.key === st.shape) || SHAPES[0];
+  const W = 0.5*(0.172*hand.ref*f.wf + 0.54*fr.seg*f.ws)*st.wid;
+  const L = Math.max(fr.seg*(f.l + shape.ext)*st.len, W*.55);
+  return { W, L };
+}
+
+/* ---------- 3D nail mesh ---------- */
+const LR = 1.5;              // mesh length / width
+const ARCH = 0.17, CURL = 0.12, THICK = 0.045;   // in units of nail width
+
+function buildGeometry(shape){
+  const { segs, pts } = nailSegs(shape, 1, LR);
+  const poly = [];           // right half of the outline, y>=0 towards the tip
+  segs.forEach((s, i) => {
+    const p0 = pts[i];
+    for (let k = i ? 1 : 0; k <= 14; k++){
+      const t = k/14, u = 1 - t;
+      poly.push([
+        u*u*u*p0[0] + 3*u*u*t*s[0] + 3*u*t*t*s[2] + t*t*t*s[4],
+        -(u*u*u*p0[1] + 3*u*u*t*s[1] + 3*u*t*t*s[3] + t*t*t*s[5])
+      ]);
+    }
+  });
+  const hwAt = yq => {
+    let best = 0.0005;
+    for (let i = 0; i < poly.length - 1; i++){
+      const [x0,y0] = poly[i], [x1,y1] = poly[i+1];
+      const lo = Math.min(y0,y1), hi = Math.max(y0,y1);
+      if (yq < lo - 1e-9 || yq > hi + 1e-9) continue;
+      if (hi - lo < 1e-9) best = Math.max(best, x0, x1);
+      else best = Math.max(best, x0 + (x1-x0)*(yq-y0)/(y1-y0));
+    }
+    return best;
+  };
+
+  const M = 46, N = 20, STRIDE = 11;
+  const verts = [];
+  const push = (px,py,pz, nx,ny,nz, u,v, m0,m1,m2) => verts.push(px,py,pz, nx,ny,nz, u,v, m0,m1,m2);
+  const grid = [];           // [j][i] -> {x,y,z,u}
+  for (let j = 0; j <= M; j++){
+    const y = LR*(0.5 - 0.5*Math.cos(Math.PI*j/M)), t = y/LR;
+    const hw = hwAt(y), hwS = Math.max(hw, 0.03);
+    const e = 0.012; const dhw = (hwAt(Math.min(y+e, LR)) - hwAt(Math.max(y-e, 0))) / (Math.min(y+e, LR) - Math.max(y-e, 0));
+    const A = 0.7 + 0.3*Math.sin(Math.PI*t), dA = 0.3*Math.PI*Math.cos(Math.PI*t)/LR;
+    grid[j] = [];
+    for (let i = 0; i <= N; i++){
+      const u = -1 + 2*i/N, x = u*hw;
+      const z = ARCH*(1 - u*u)*A - CURL*t*t;
+      const dzdx = ARCH*(-2*u/hwS)*A;
+      const dudy = -u*dhw/hwS;
+      const dzdy = ARCH*(-2*u)*dudy*A + ARCH*(1 - u*u)*dA - 2*CURL*t/LR;
+      const nl = norm3(v3(-dzdx, -dzdy, 1));
+      grid[j][i] = { x, y, z, u, nx: nl.x, ny: nl.y, nz: nl.z, t };
+      push(x, y, z, nl.x, nl.y, nl.z, x + 0.5, 1 - y/LR, Math.abs(u), t, 0);
+    }
+  }
+  const idx = [];
+  const at = (j,i) => j*(N+1) + i;
+  for (let j = 0; j < M; j++) for (let i = 0; i < N; i++){
+    idx.push(at(j,i), at(j+1,i), at(j,i+1), at(j,i+1), at(j+1,i), at(j+1,i+1));
+  }
+  // side wall around the rim
+  const loop = [];
+  for (let j = 0; j <= M; j++) loop.push(grid[j][N]);
+  for (let i = N-1; i >= 0; i--) loop.push(grid[M][i]);
+  for (let j = M-1; j >= 0; j--) loop.push(grid[j][0]);
+  const base = verts.length / STRIDE;
+  loop.forEach((p, k) => {
+    const a = loop[(k + loop.length - 1) % loop.length], b = loop[(k + 1) % loop.length];
+    let tx = b.x - a.x, ty = b.y - a.y, nx = ty, ny = -tx;
+    if (Math.hypot(nx, ny) < 1e-6){ nx = p.x; ny = p.y - LR/2; }
+    if (nx*p.x + ny*(p.y - LR/2) < 0){ nx = -nx; ny = -ny; }
+    const l = Math.hypot(nx, ny) || 1; nx /= l; ny /= l;
+    push(p.x, p.y, p.z, nx, ny, 0, p.x + 0.5, 1 - p.y/LR, 1, p.t, 1);
+    push(p.x, p.y, p.z - THICK, nx, ny, 0, p.x + 0.5, 1 - p.y/LR, 1, p.t, 1);
+  });
+  for (let k = 0; k < loop.length; k++){
+    const k2 = (k + 1) % loop.length;
+    const t0 = base + k*2, b0 = t0 + 1, t1 = base + k2*2, b1 = t1 + 1;
+    idx.push(t0, b0, t1, t1, b0, b1);
+  }
+  return { vertices: new Float32Array(verts), indices: new Uint16Array(idx), stride: STRIDE };
+}
+
+/* ---------- WebGL renderer ---------- */
+const VERT = `
+attribute vec3 aPos; attribute vec3 aNor; attribute vec2 aUV; attribute vec3 aMeta;
+uniform vec3 uBase; uniform mat3 uAxes; uniform vec3 uScale; uniform vec2 uRes;
+varying vec3 vN; varying vec2 vUV; varying vec3 vMeta;
+void main(){
+  vec3 w = uBase + uAxes*(aPos*uScale);
+  gl_Position = vec4(w.x/uRes.x*2.0-1.0, 1.0-w.y/uRes.y*2.0, w.z/uRes.x, 1.0);
+  vN = normalize(uAxes*(aNor/uScale));
+  vUV = aUV; vMeta = aMeta;
+}`;
+const FRAG = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec3 vN; varying vec2 vUV; varying vec3 vMeta;
+uniform sampler2D uTex; uniform float uGloss; uniform float uMode;
+vec3 env(vec3 R){
+  float up = clamp(-R.y*0.5+0.5, 0.0, 1.0);
+  vec3 sky = mix(vec3(0.16,0.15,0.17), vec3(0.78,0.80,0.86), up);
+  float w1 = pow(max(dot(R, normalize(vec3(-0.5,-0.6,-0.62))), 0.0), 18.0);
+  float w2 = pow(max(dot(R, normalize(vec3(0.75,-0.25,-0.6))), 0.0), 10.0);
+  return sky + vec3(1.0,0.98,0.95)*w1*2.2 + vec3(0.8,0.85,1.0)*w2*0.6;
+}
+void main(){
+  vec3 N = normalize(vN);
+  vec3 V = vec3(0.0,0.0,-1.0);
+  vec3 base = texture2D(uTex, vUV).rgb;
+  float edge = vMeta.x, along = vMeta.y, wall = vMeta.z;
+  float ndv = clamp(dot(N,V), 0.0, 1.0);
+  vec3 L = normalize(vec3(-0.45,-0.7,-0.55));
+  float ndl = clamp(dot(N,L), 0.0, 1.0);
+  vec3 col = base*(0.74 + 0.40*ndl);
+  col *= 1.0 - 0.20*edge*edge*edge - 0.18*(1.0 - smoothstep(0.0, 0.12, along));
+  float g = uGloss;
+  vec3 H = normalize(L+V);
+  float spec = pow(max(dot(N,H), 0.0), mix(8.0, 160.0, g))*(0.10 + 0.90*g);
+  vec3 R = reflect(-V, N);
+  float fres = 0.04 + 0.96*pow(1.0 - ndv, 5.0);
+  vec3 e = env(R);
+  float envAmt = (0.12 + 0.88*fres)*g;
+  if (uMode > 0.5 && uMode < 1.5){
+    float q = (dot(N, normalize(vec3(-0.55,-0.1,-0.83))) - 0.45)/0.14;
+    float band = exp(-q*q);
+    col = mix(base*0.5*(0.7 + 0.5*ndl), mix(base, vec3(1.0), 0.6)*1.15, band);
+  } else if (uMode > 1.5 && uMode < 2.5){
+    col = mix(col*0.12, e*mix(vec3(1.0), base, 0.8)*1.05, 0.95);
+    envAmt = 0.0;
+  } else if (uMode > 2.5){
+    float a = fres*1.4 + dot(N, vec3(0.5,0.3,-0.8))*0.9;
+    vec3 rb = 0.5 + 0.5*cos(6.28318*(vec3(0.0,0.33,0.67) + a));
+    col = mix(col, rb*(0.7 + 0.4*ndl), 0.65);
+  }
+  col += e*envAmt*0.5 + vec3(spec)*0.9;
+  if (wall > 0.5) col = mix(col*0.9, vec3(1.0), 0.16);
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+}`;
+
+function createRenderer(glCanvas){
+  let gl;
+  try { gl = glCanvas.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: true, depth: true, preserveDrawingBuffer: true }); } catch { gl = null; }
+  if (!gl) return { ok: false };
+  const compile = (type, src) => {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  };
+  let prog;
+  try {
+    prog = gl.createProgram();
+    gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  } catch (e) { return { ok: false, error: String(e) }; }
+  gl.useProgram(prog);
+  const U = n => gl.getUniformLocation(prog, n), A = n => gl.getAttribLocation(prog, n);
+  const loc = { base: U('uBase'), axes: U('uAxes'), scale: U('uScale'), res: U('uRes'), tex: U('uTex'), gloss: U('uGloss'), mode: U('uMode') };
+  const attr = { pos: A('aPos'), nor: A('aNor'), uv: A('aUV'), meta: A('aMeta') };
+
+  const geoms = {};
+  const geom = shape => {
+    if (geoms[shape]) return geoms[shape];
+    const g = buildGeometry(shape);
+    const vbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, g.vertices, gl.STATIC_DRAW);
+    const ibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, g.indices, gl.STATIC_DRAW);
+    return geoms[shape] = { vbo, ibo, count: g.indices.length, stride: g.stride };
+  };
+
+  const TW = 256, TH = Math.round(256*LR);
+  const texCanvas = document.createElement('canvas'); texCanvas.width = TW; texCanvas.height = TH;
+  const tctx = texCanvas.getContext('2d');
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  let texKey = '';
+  const SHADER_ONLY = ['cateye', 'chrome', 'holo'];   // the shader makes the look; the texture is just the base colour
+  function bake(st, t){
+    const animated = st.design === 'glitter';
+    const key = [st.design, st.c1, st.c2, st.imageId].join('|');
+    if (!animated && key === texKey) return;
+    texKey = key;
+    const bakeSt = SHADER_ONLY.includes(st.design) ? { ...st, design: 'solid' } : st;
+    tctx.setTransform(1,0,0,1,0,0); tctx.clearRect(0, 0, TW, TH);
+    tctx.save(); tctx.translate(TW/2, TH);
+    paintDesign(tctx, TW, TH, bakeSt, t, 3);
+    tctx.restore();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texCanvas);
+  }
+
+  const unitPaths = {};
+  function shadows(ctx2d, hands, st){
+    const shape = SHAPES.find(s => s.key === st.shape) || SHAPES[0];
+    const path = unitPaths[st.shape] || (unitPaths[st.shape] = nailPath(st.shape, 1, LR));
+    for (const hand of hands){
+      if (!handVisible(hand, st.vis)) continue;
+      for (const f of hand.fingers){
+        const fr = nailFrame(hand, f); if (!fr) continue;
+        const { W, L } = nailSize(hand, f, fr, st), sy = L/LR;
+        const k = f.b + st.pos;
+        ctx2d.save();
+        ctx2d.setTransform(fr.X.x*W, fr.X.y*W, -fr.F.x*sy, -fr.F.y*sy, f.dip.x + fr.F.x*fr.seg*k, f.dip.y + fr.F.y*fr.seg*k);
+        ctx2d.shadowColor = 'rgba(0,0,0,.4)'; ctx2d.shadowBlur = W*.2; ctx2d.shadowOffsetY = W*.05;
+        ctx2d.fillStyle = 'rgba(0,0,0,.35)'; ctx2d.fill(path);
+        ctx2d.restore();
+      }
+    }
+  }
+
+  function render(hands, st, t, w, h){
+    if (glCanvas.width !== w || glCanvas.height !== h){ glCanvas.width = w; glCanvas.height = h; }
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0, 0, 0, 0); gl.clearDepth(1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    if (!hands.length) return;
+    const g = geom(st.shape);
+    const design = DESIGNS.find(d => d.key === st.design);
+    bake(st, t);
+    gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.disable(gl.CULL_FACE);
+    gl.useProgram(prog);
+    gl.bindBuffer(gl.ARRAY_BUFFER, g.vbo); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.ibo);
+    const B = 4, S = g.stride*B;
+    for (const [a, size, off] of [[attr.pos,3,0],[attr.nor,3,3],[attr.uv,2,6],[attr.meta,3,8]]){
+      gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, size, gl.FLOAT, false, S, off*B);
+    }
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1i(loc.tex, 0);
+    gl.uniform2f(loc.res, w, h);
+    gl.uniform1f(loc.gloss, st.gloss);
+    gl.uniform1f(loc.mode, design ? design.mode : 0);
+    const axes = new Float32Array(9);
+    for (const hand of hands){
+      if (!handVisible(hand, st.vis)) continue;
+      for (const f of hand.fingers){
+        const fr = nailFrame(hand, f); if (!fr) continue;
+        const { W, L } = nailSize(hand, f, fr, st);
+        const k = f.b + st.pos;
+        axes.set([fr.X.x, fr.X.y, fr.X.z, fr.F.x, fr.F.y, fr.F.z, fr.N.x, fr.N.y, fr.N.z]);
+        gl.uniform3f(loc.base, f.dip.x + fr.F.x*fr.seg*k, f.dip.y + fr.F.y*fr.seg*k, 0);
+        gl.uniformMatrix3fv(loc.axes, false, axes);
+        gl.uniform3f(loc.scale, W, L/LR, W);
+        gl.drawElements(gl.TRIANGLES, g.count, gl.UNSIGNED_SHORT, 0);
+      }
+    }
+  }
+  return { ok: true, render, shadows };
+}
+
+/* ---------- Smoothing between frames ---------- */
+let smoothed = [];
+const lerp = (a,b,k) => a + (b-a)*k;
+const lerpPt = (a,b,k) => v3(lerp(a.x,b.x,k), lerp(a.y,b.y,k), lerp(a.z,b.z,k));
+function smoothHands(fresh){
+  const K = .6, taken = new Set(), next = [];
+  for (const h of fresh){
+    let best = -1, bd = Infinity;
+    smoothed.forEach((p,i) => {
+      if (taken.has(i)) return;
+      const d = Math.hypot(p.wrist.x-h.wrist.x, p.wrist.y-h.wrist.y);
+      if (d < bd){ bd = d; best = i; }
+    });
+    if (best >= 0 && bd < h.ref*1.5){
+      taken.add(best);
+      const p = smoothed[best];
+      next.push({
+        wrist: lerpPt(p.wrist, h.wrist, K), ref: lerp(p.ref, h.ref, K),
+        normal: norm3(lerpPt(p.normal, h.normal, K)), facing: h.facing,
+        fingers: h.fingers.map((f,i) => ({ ...f, tip: lerpPt(p.fingers[i].tip, f.tip, K), dip: lerpPt(p.fingers[i].dip, f.dip, K) }))
+      });
+    } else next.push(h);
+  }
+  smoothed = next;
+  return next;
+}
+
+/* ---------- Icons for the picker ---------- */
+function drawShapeIcon(canvas, key, fill, stroke){
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const cw = canvas.clientWidth || +canvas.getAttribute('width'), ch = canvas.clientHeight || +canvas.getAttribute('height');
+  canvas.width = cw*dpr; canvas.height = ch*dpr;
+  const c = canvas.getContext('2d'); c.scale(dpr, dpr);
+  const W = cw*.72, L = ch*.86;
+  c.translate(cw/2, ch - (ch-L)/2 - 1);
+  const p = nailPath(key, W, L);
+  c.fillStyle = fill; c.fill(p);
+  c.lineWidth = 1.4; c.strokeStyle = stroke; c.stroke(p);
+}
+
+/* ---------- UI ---------- */
+const $ = id => document.getElementById(id);
+const saved = (() => { try { return JSON.parse(localStorage.getItem('tirnak-provasi') || '{}'); } catch { return {}; } })();
+for (const k of ['shape','design','c1','c2','len','wid','pos','gloss','vis']) if (saved[k] !== undefined) state[k] = saved[k];
+if (state.design === 'image' || !DESIGNS.some(d => d.key === state.design)) state.design = 'solid';
+const persist = () => { try { const { image, imageId, ...rest } = state; localStorage.setItem('tirnak-provasi', JSON.stringify(rest)); } catch {} };
+
+function buildShapes(){
+  const row = $('shapes'); row.textContent = '';
+  for (const s of SHAPES){
+    const b = document.createElement('button');
+    b.className = 'shape'; b.type = 'button'; b.dataset.key = s.key;
+    const cv = document.createElement('canvas'); cv.width = 36; cv.height = 52;
+    const sp = document.createElement('span'); sp.textContent = s.label;
+    b.append(cv, sp);
+    b.onclick = () => { state.shape = s.key; syncUI(); persist(); };
+    row.append(b);
+  }
+}
+function buildDesigns(){
+  const row = $('designs'); row.textContent = '';
+  for (const d of DESIGNS){
+    const b = document.createElement('button');
+    b.className = 'pill'; b.type = 'button'; b.dataset.key = d.key; b.textContent = d.label;
+    b.onclick = () => { state.design = d.key; syncUI(); persist(); };
+    row.append(b);
+  }
+  const up = document.createElement('button');
+  up.className = 'pill'; up.type = 'button'; up.dataset.key = 'image'; up.id = 'upbtn';
+  up.onclick = () => $('file').click();
+  row.append(up);
+}
+function buildSwatches(rowId, prop){
+  const row = $(rowId); row.textContent = '';
+  for (const hex of SWATCHES){
+    const b = document.createElement('button');
+    b.className = 'swatch'; b.type = 'button'; b.style.background = hex; b.dataset.hex = hex; b.setAttribute('aria-label', 'Renk ' + hex);
+    b.onclick = () => { state[prop] = hex; syncUI(); persist(); };
+    row.append(b);
+  }
+  const lab = document.createElement('label');
+  lab.className = 'swatch custom'; lab.setAttribute('aria-label', 'Özel renk');
+  const inp = document.createElement('input'); inp.type = 'color'; inp.value = state[prop];
+  inp.oninput = () => { state[prop] = inp.value; syncUI(); persist(); };
+  lab.append(inp); row.append(lab);
+}
+function syncUI(){
+  document.querySelectorAll('#shapes .shape').forEach(b => {
+    b.setAttribute('aria-pressed', state.shape === b.dataset.key);
+    drawShapeIcon(b.querySelector('canvas'), b.dataset.key, state.c1, 'rgba(255,255,255,.55)');
+  });
+  document.querySelectorAll('#designs .pill').forEach(b => b.setAttribute('aria-pressed', state.design === b.dataset.key));
+  $('upbtn').textContent = state.image ? 'Görselim (değiştir)' : 'Görsel yükle';
+  for (const [rowId, prop] of [['colors1','c1'],['colors2','c2']]){
+    document.querySelectorAll('#' + rowId + ' .swatch[data-hex]').forEach(b => b.setAttribute('aria-pressed', b.dataset.hex.toLowerCase() === state[prop].toLowerCase()));
+  }
+  const d = DESIGNS.find(x => x.key === state.design);
+  $('colors1').parentElement.hidden = state.design === 'image';
+  $('sec2').hidden = !(d && d.two);
+  $('c1label').textContent = d && d.two ? 'Ana renk' : 'Renk';
+  $('len').value = state.len; $('wid').value = state.wid; $('pos').value = state.pos; $('gloss').value = state.gloss;
+  document.querySelectorAll('#vis .pill').forEach(b => b.setAttribute('aria-pressed', b.dataset.vis === state.vis));
+}
+for (const id of ['len','wid','pos','gloss']){
+  $(id).addEventListener('input', e => { state[id] = +e.target.value; persist(); });
+}
+document.querySelectorAll('#vis .pill').forEach(b => b.addEventListener('click', () => { state.vis = b.dataset.vis; syncUI(); persist(); }));
+$('file').addEventListener('change', async e => {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  try {
+    state.image = await createImageBitmap(f);
+    state.imageId++;
+    state.design = 'image';
+    syncUI();
+  } catch { setStatus('Görsel açılamadı', true); }
+  e.target.value = '';
+});
+
+buildShapes(); buildDesigns(); buildSwatches('colors1','c1'); buildSwatches('colors2','c2'); syncUI();
+(function motif(){
+  const cv = $('motif'), dpr = Math.min(window.devicePixelRatio || 1, 3);
+  cv.width = 340*dpr; cv.height = 96*dpr;
+  const c = cv.getContext('2d'); c.scale(dpr, dpr);
+  SHAPES.forEach((s, i) => {
+    c.save(); c.translate(26 + i*57.5, 90);
+    const p = nailPath(s.key, 36, 78);
+    c.fillStyle = 'rgba(233,185,165,.14)'; c.fill(p);
+    c.lineWidth = 1.2; c.strokeStyle = '#e9b9a5'; c.stroke(p);
+    c.restore();
+  });
+})();
+
+/* ---------- Camera + detection loop ---------- */
+const video = $('cam'), canvas = $('view'), glc = $('gl'), ctx = canvas.getContext('2d', { alpha: false });
+const renderer = createRenderer(glc);
+let stream = null, landmarker = null, facing = 'environment', running = false, lastVideoTime = -1, misses = 0, lastHands = [], lastCount = -1;
+
+window.NailFilter = { SHAPES, DESIGNS, state, nailPath, buildGeometry, toHands, drawNails, smoothHands, createRenderer, renderer, FINGERS };
+
+function setStatus(text, warn){ const s = $('status'); if (s.textContent !== text) s.textContent = text; s.classList.toggle('warn', !!warn); }
+
+async function startCamera(){
+  stopCamera();
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('nocam');
+  const portrait = window.innerHeight >= window.innerWidth;
+  stream = await navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: { facingMode: { ideal: facing }, width: { ideal: portrait ? 720 : 1280 }, height: { ideal: portrait ? 1280 : 720 } }
+  });
+  video.srcObject = stream;
+  await video.play();
+  const track = stream.getVideoTracks()[0];
+  const fm = track && track.getSettings && track.getSettings().facingMode;
+  const mirrored = fm ? fm === 'user' : facing === 'user';
+  canvas.style.transform = glc.style.transform = mirrored ? 'scaleX(-1)' : 'none';
+  canvas.dataset.mirrored = mirrored ? '1' : '';
+  smoothed = []; lastVideoTime = -1;
+}
+function stopCamera(){ if (stream){ stream.getTracks().forEach(t => t.stop()); stream = null; } }
+
+async function loadLandmarker(){
+  let lastErr;
+  for (const base of VISION_BASES){
+    try {
+      const vision = await import(base + '/vision_bundle.mjs');
+      const fileset = await vision.FilesetResolver.forVisionTasks(base + '/wasm');
+      for (const delegate of ['GPU','CPU']){
+        try {
+          return await vision.HandLandmarker.createFromOptions(fileset, {
+            baseOptions: { modelAssetPath: MODEL_URL, delegate },
+            runningMode: 'VIDEO', numHands: 2,
+            minHandDetectionConfidence: .5, minHandPresenceConfidence: .5, minTrackingConfidence: .5
+          });
+        } catch (e) { lastErr = e; }
+      }
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error('model');
+}
+
+function frame(now){
+  if (!running) return;
+  requestAnimationFrame(frame);
+  if (video.readyState < 2) return;
+  const w = video.videoWidth, h = video.videoHeight;
+  if (!w || !h) return;
+  if (canvas.width !== w || canvas.height !== h){ canvas.width = w; canvas.height = h; }
+  ctx.drawImage(video, 0, 0, w, h);
+  if (landmarker && video.currentTime !== lastVideoTime){
+    lastVideoTime = video.currentTime;
+    let res = null;
+    try { res = landmarker.detectForVideo(video, performance.now()); } catch {}
+    const fresh = res ? toHands(res, w, h) : [];
+    if (fresh.length){ misses = 0; lastHands = smoothHands(fresh); }
+    else if (++misses > 4){ lastHands = []; smoothed = []; }
+  }
+  if (renderer.ok){
+    if (lastHands.length) renderer.shadows(ctx, lastHands, state);
+    renderer.render(lastHands, state, now, w, h);
+  } else if (lastHands.length) drawNails(ctx, lastHands, state, now);
+  if (landmarker && lastHands.length !== lastCount){
+    lastCount = lastHands.length;
+    setStatus(lastCount ? (lastCount + ' el algılandı') : 'El aranıyor. Elini kameraya göster');
+  }
+}
+
+$('go').addEventListener('click', async () => {
+  const go = $('go'), msg = $('msg');
+  go.disabled = true; msg.textContent = '';
+  try {
+    setStatus('Kamera açılıyor');
+    await startCamera();
+  } catch (e) {
+    go.disabled = false; setStatus('Kamera kapalı', true);
+    msg.textContent = e && e.message === 'nocam'
+      ? 'Kamera için sayfa https adresinden açılmalı.'
+      : 'Kamera izni verilmedi. iPhone: Ayarlar > Safari > Kamera bölümünden izin ver, sayfayı yenile.';
+    return;
+  }
+  $('intro').hidden = true;
+  running = true; lastCount = -1; requestAnimationFrame(frame);
+  setStatus('Model yükleniyor');
+  try {
+    landmarker = await loadLandmarker();
+    setStatus('El aranıyor. Elini kameraya göster');
+  } catch (e) {
+    setStatus('Model yüklenemedi, internet bağlantını kontrol et', true);
+  }
+});
+
+$('flip').addEventListener('click', async () => {
+  if (!running) return;
+  facing = facing === 'environment' ? 'user' : 'environment';
+  try { await startCamera(); } catch { facing = facing === 'environment' ? 'user' : 'environment'; setStatus('Kamera değiştirilemedi', true); }
+});
+
+$('snap').addEventListener('click', async () => {
+  if (!running) return;
+  const c = document.createElement('canvas'); c.width = canvas.width; c.height = canvas.height;
+  const x = c.getContext('2d');
+  if (canvas.dataset.mirrored){ x.translate(c.width, 0); x.scale(-1, 1); }
+  x.drawImage(canvas, 0, 0);
+  if (renderer.ok && glc.width === c.width) x.drawImage(glc, 0, 0);
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', .92));
+  if (!blob) return;
+  const file = new File([blob], 'tirnak-denemesi.jpg', { type: 'image/jpeg' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })){
+    try { await navigator.share({ files: [file] }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  $('shotimg').src = URL.createObjectURL(blob); $('shot').hidden = false;
+});
+$('shotclose').addEventListener('click', () => { $('shot').hidden = true; });
+
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && running && (!stream || !stream.active)){
+    try { await startCamera(); } catch { setStatus('Kamera yeniden açılamadı', true); }
+  }
+});
+</script>
+</body>
+</html>
